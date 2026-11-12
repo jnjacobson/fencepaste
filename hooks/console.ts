@@ -167,8 +167,8 @@ export const ROUTE_SYSTEM = `You route a SQL block from a Claude Code reply to t
 Rules:
 - Answer with exactly one data source name from the list, verbatim, or NONE. No other words.
 - Tell the service (its group) from the tables in the SQL, the reply text and the working directory.
-- If the reply names an environment (local, dev, staging, stage, prod, live, production), use it. If it names none, use the production one (prod, live or production).
-- If a service has several production sources, prefer the read-only replica or the one that is not root, unless the reply names another.
+- If the reply tells the user which environment (local, dev, staging, stage, prod, live, production) to run the SQL in, use it. An environment the reply only reports results from, or that Claude already ran the query on, does not count. Otherwise use the production one (prod, live or production).
+- If a service has several production sources, prefer the read-only replica or the one that is not root, unless the reply tells the user to use another.
 - If you cannot tell the service, answer NONE.`
 
 export function routePrompt(sources: readonly DataSource[], cwd: string, reply: string, sql: string): string {
