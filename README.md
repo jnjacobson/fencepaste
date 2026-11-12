@@ -1,6 +1,6 @@
 # fencepaste
 
-A Claude Code mod that puts copy buttons above the code blocks in Claude's replies, one per statement for SQL, and a second button that drops SQL straight into the right PhpStorm database console.
+A Claude Code mod that puts copy buttons above the code blocks in Claude's replies, one per statement for SQL, and a second button that drops SQL straight into the right PhpStorm or DataGrip database console.
 
 Handy when Claude hands you queries to run yourself, for example against a production database it has no access to.
 
@@ -13,7 +13,7 @@ SELECT COUNT(*) FROM orders WHERE created_at >= CURDATE();
 
 - **Copy buttons.** Every closed code block in Claude's replies gets a dim label row with its language and a `[ copy ]` button. After a press the button reads `copied ✓` for two seconds.
 - **One button per SQL statement.** A SQL block with several statements gets a row per statement (`sql 1/3`, `sql 2/3`, …). It splits at top-level `;` and ignores those in strings, comments and `$$` bodies. Comment lines before a statement go with it. `DELIMITER` blocks and `BEGIN … END` routine bodies stay whole.
-- **PhpStorm console button** (macOS). After each turn, Claude Haiku picks the PhpStorm data source each SQL block belongs to. The button, `[ ▸ <data source> ]`, appends the statement to that data source's console, copies it too, and brings PhpStorm up with the caret after the `;`. Nothing runs by itself: you press run.
+- **Console button** (macOS, PhpStorm or DataGrip). After each turn, Claude Haiku picks the data source each SQL block belongs to. The button, `[ ▸ <data source> ]`, appends the statement to that data source's console, copies it too, and brings the IDE up with the caret after the `;`. Nothing runs by itself: you press run.
 - **Fragments become whole queries.** When a block holds only part of a query, such as a `WHERE` clause that replaces the one in a query further up, the console button sends the complete query Haiku builds from the reply. The copy button keeps the fragment as written.
 
 The buttons appear in terminal sessions, for Claude's own replies.
@@ -34,7 +34,7 @@ From a shell, or when you ask Claude to install it from this repository:
 claude plugin install fencepaste --marketplace jnjacobson/fencepaste
 ```
 
-Add `--config phpstorm=/path/to/PhpStorm.app` to set the PhpStorm option in the same step. A session that was already running picks the mod up after `/reload-plugins`.
+Add `--config ide=/path/to/DataGrip.app` to set the IDE option in the same step. A session that was already running picks the mod up after `/reload-plugins`.
 
 In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `jnjacobson/fencepaste`, then Add plugin.
 
@@ -44,16 +44,17 @@ Needs a Claude Code version with mods (plugins with function hooks); built and t
 
 | Option | Default | What it is |
 | --- | --- | --- |
-| `phpstorm` | empty | PhpStorm's app (`/Applications/PhpStorm.app`) or its command-line launcher. Empty looks for `PhpStorm.app` in `/Applications`, then `~/Applications`. |
+| `ide` | empty | The app of PhpStorm or DataGrip (`/Applications/DataGrip.app`), or its command-line launcher. A launcher counts as DataGrip when its name holds `datagrip`. Empty looks for `PhpStorm.app`, then `DataGrip.app`, in `/Applications` and `~/Applications`. |
 
 Change it in `/config`, or with `--config` on install.
 
 ## How the console button works
 
-- **Data sources** come from the newest PhpStorm config folder, `~/Library/Application Support/JetBrains/PhpStorm<version>/options/dataSources.xml` (the global ones), and from the project's `.idea/dataSources.xml`, in the working directory or the nearest folder above it that has one. When a project and a global data source share a name, the project's wins. Redis sources are left out.
+- **IDE.** The `ide` option's, else PhpStorm when it is installed, else DataGrip. Who has both and wants DataGrip sets the option.
+- **Data sources** come from the IDE's newest config folder, `~/Library/Application Support/JetBrains/<PhpStorm|DataGrip><version>/options/dataSources.xml` (the global ones), and from the project's `.idea/dataSources.xml`, in the working directory or the nearest folder above it that has one. When a project and a global data source share a name, the project's wins. Redis sources are left out.
 - **Routing.** Haiku sees the data sources' names, groups and drivers, the reply and the working directory. A reply that names an environment (local, staging, prod, …) gets that one; otherwise production. Among several production sources it prefers a read-only replica or a non-root one. When it cannot tell the service, the block gets no console button. Its picks last for the session.
-- **Consoles** are PhpStorm's `consoles/db/<data source uuid>/console.sql` in the same config folder, made when missing. Each statement goes after one blank line.
-- **Jumping.** PhpStorm reloads an open console from disk only once its window is active, so fencepaste opens it, waits until PhpStorm is the frontmost app, and jumps to the new line a second time.
+- **Consoles** are the IDE's `consoles/db/<data source uuid>/console.sql` in the same config folder, made when missing. Each statement goes after one blank line.
+- **Jumping.** The IDE reloads an open console from disk only once its window is active, so fencepaste opens it, waits until the IDE is the frontmost app, and jumps to the new line a second time.
 
 ## Privacy
 

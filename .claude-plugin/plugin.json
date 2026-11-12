@@ -1,16 +1,16 @@
 {
   "name": "fencepaste",
   "version": "0.1.0",
-  "description": "Copy buttons above the code blocks in Claude's replies, one per SQL statement, and a button that puts SQL into the matching PhpStorm database console",
+  "description": "Copy buttons above the code blocks in Claude's replies, one per SQL statement, and a button that puts SQL into the matching PhpStorm or DataGrip database console",
   "author": { "name": "jnjacobson", "url": "https://github.com/jnjacobson" },
   "homepage": "https://github.com/jnjacobson/fencepaste",
   "license": "MIT",
   "types": "./types/index.d.ts",
   "userConfig": {
-    "phpstorm": {
+    "ide": {
       "type": "string",
-      "title": "PhpStorm",
-      "description": "PhpStorm's app (/Applications/PhpStorm.app) or its command-line launcher. Empty looks for PhpStorm.app in /Applications and ~/Applications.",
+      "title": "IDE",
+      "description": "The app of PhpStorm or DataGrip (/Applications/DataGrip.app), or its command-line launcher. Empty looks for PhpStorm.app, then DataGrip.app, in /Applications and ~/Applications.",
       "default": ""
     }
   }

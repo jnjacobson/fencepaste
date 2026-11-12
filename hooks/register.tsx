@@ -10,6 +10,7 @@ import {
   configDir,
   consolePath,
   dataSources,
+  findIde,
   openInConsole,
   parseCompletion,
   pickSource,
@@ -37,15 +38,17 @@ async function complete($: EngineInterface, reply: string, fragment: string, lan
   return answer.isAnswered ? parseCompletion(answer.text, lang) : null
 }
 
-/** Asks Haiku which PhpStorm console each new SQL block of a reply belongs in. */
-async function route($: EngineInterface, reply: string) {
+/** Asks Haiku which IDE console each new SQL block of a reply belongs in. */
+async function route($: EngineInterface, reply: string, ideOption: string) {
   const known = await read($, targets)
   const blocks = sqlBlocks(reply).filter(
     (block, i, all) => !(blockKey(block.body) in known) && all.findIndex(b => b.body === block.body) === i,
   )
   if (blocks.length === 0) return
 
-  const dir = await configDir($)
+  const ide = await findIde($, ideOption)
+  if (ide === undefined) return
+  const dir = await configDir($, ide.product)
   if (dir === undefined) return
   const cwd = await $.session.cwd()
   const sources = [...(await projectDataSources($, cwd)), ...(await dataSources($, dir))]
@@ -65,6 +68,7 @@ async function route($: EngineInterface, reply: string) {
       const target: Target | null = source && {
         name: source.name,
         path: consolePath(dir, source.uuid),
+        ide,
         ...(sql === null ? {} : { sql }),
       }
       await update($, targets, all => ({ ...all, [blockKey(body)]: target }))
@@ -82,13 +86,13 @@ async function flash($: EngineInterface, id: string, ok: boolean) {
 }
 
 export const register: Register = (on, options) => {
-  const phpstorm = typeof options.phpstorm === 'string' ? options.phpstorm : ''
+  const ideOption = typeof options.ide === 'string' ? options.ide : ''
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId === undefined && e.reason === 'answer' && sqlBlocks(e.answer).length > 0) {
       // After the turn has ended, so routing never holds it up.
-      $.clock.after(0, () => void route($, e.answer).catch(() => undefined))
+      $.clock.after(0, () => void route($, e.answer, ideOption).catch(() => undefined))
     }
     return result
   })
@@ -122,7 +126,7 @@ export const register: Register = (on, options) => {
 
     const toConsole = async (id: string, text: string, lang: string, target: Target, surface: RenderSurface) => {
       await $.ui.copy({ text, surface })
-      const ok = await openInConsole($, phpstorm, target, text, statementEnd(text, lang)).catch(() => false)
+      const ok = await openInConsole($, target, text, statementEnd(text, lang)).catch(() => false)
       await flash($, id, ok)
     }
 

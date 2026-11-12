@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  DATAGRIP,
+  PHPSTORM,
   appendStatement,
   blockKey,
   newestConfig,
@@ -59,11 +61,12 @@ describe('appendStatement', () => {
 })
 
 describe('newestConfig', () => {
-  test('picks the newest PhpStorm, never PhpStormLight', () => {
-    expect(
-      newestConfig(['PhpStorm2025.3', 'PhpStorm2026.2', 'PhpStormLight2026.3', 'PhpStorm2026.10', 'IntelliJIdea2026.2']),
-    ).toBe('PhpStorm2026.10')
-    expect(newestConfig(['WebStorm2026.1'])).toBeUndefined()
+  const names = ['PhpStorm2025.3', 'PhpStorm2026.2', 'PhpStormLight2026.3', 'PhpStorm2026.10', 'DataGrip2026.2']
+
+  test('picks the product’s newest, never PhpStormLight', () => {
+    expect(newestConfig(names, PHPSTORM)).toBe('PhpStorm2026.10')
+    expect(newestConfig(names, DATAGRIP)).toBe('DataGrip2026.2')
+    expect(newestConfig(['WebStorm2026.1'], PHPSTORM)).toBeUndefined()
   })
 })
 

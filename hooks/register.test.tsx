@@ -78,11 +78,13 @@ const DIR = `${HOME}/Library/Application Support/JetBrains/PhpStorm2026.2`
 const CONSOLE = `${DIR}/consoles/db/u1/console.sql`
 const SOURCE = 'shop - prod replica/ro'
 const BIN = '/Applications/PhpStorm.app/Contents/MacOS/phpstorm'
+const DATAGRIP_BIN = '/Applications/DataGrip.app/Contents/MacOS/datagrip'
+const DATAGRIP_CONSOLE = `${HOME}/Library/Application Support/JetBrains/DataGrip2026.2/consoles/db/p1/console.sql`
 const launch = (line: number, column: number, bin = BIN) =>
   [bin, '--line', String(line), '--column', String(column), CONSOLE]
 
 /** Stands in for PhpStorm's config and launcher, Haiku and the clipboard. */
-function phpstorm(on: On, { completion = 'NONE', route = SOURCE, cwd = '/repos/shop' } = {}) {
+function phpstorm(on: On, { completion = 'NONE', route = SOURCE, cwd = '/repos/shop', exitCode = 0 } = {}) {
   const xml =
     `<data-source source="LOCAL" name="${SOURCE}" read-only="true" group="shop" uuid="u1">` +
     '<driver-ref>mariadb</driver-ref></data-source>'
@@ -102,6 +104,7 @@ function phpstorm(on: On, { completion = 'NONE', route = SOURCE, cwd = '/repos/s
     value: [
       { name: 'PhpStorm2025.3', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
       { name: 'PhpStorm2026.2', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+      { name: 'DataGrip2026.2', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
     ],
   }))
   on('fs.read', (_, e) => ({ value: files[e.path] ?? '' }))
@@ -122,7 +125,7 @@ function phpstorm(on: On, { completion = 'NONE', route = SOURCE, cwd = '/repos/s
   })
   on('process.run', (_, e) => {
     runs.push(e.argv)
-    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    return { value: { exitCode, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('ui.copy', (_, e) => {
     copied.push(e.text)
@@ -134,6 +137,7 @@ function phpstorm(on: On, { completion = 'NONE', route = SOURCE, cwd = '/repos/s
 test('Haiku routes a reply’s SQL to a PhpStorm console; a press appends and opens it', async ($, on) => {
   const clock = mock.clock(on)
   const { files, prompts, runs } = phpstorm(on)
+  files[DATAGRIP_BIN] = ''
 
   const reply = 'Run this on prod:\n\n```sql\nSELECT 1;\nSELECT 2;\n```'
   await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -187,12 +191,13 @@ test('a data source of the project’s .idea above the working directory gets it
   await ui.unmount()
 })
 
-const OWN_APP = { options: { phpstorm: '/Users/me/Apps/PhpStorm.app/' } }
+const OWN_APP = { options: { ide: '/Users/me/Apps/PhpStorm.app/' } }
 
 test('a fragment goes to the console as the complete query Haiku builds; copy keeps the fragment', OWN_APP, async ($, on) => {
   const clock = mock.clock(on)
   const full = 'SELECT COUNT(*) FROM t\nWHERE b = 2;'
   const { files, prompts, runs, copied } = phpstorm(on, { completion: `\`\`\`sql\n${full}\n\`\`\`` })
+  files['/Users/me/Apps/PhpStorm.app/Contents/MacOS/phpstorm'] = ''
 
   const reply = 'Count:\n\n```sql\nSELECT COUNT(*) FROM t\nWHERE a = 1;\n```\n\nFor last week:\n\n```sql\nWHERE b = 2\n```'
   await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -209,15 +214,73 @@ test('a fragment goes to the console as the complete query Haiku builds; copy ke
   await pressing
   expect(copied).toEqual(['WHERE b = 2', full])
   expect(files[CONSOLE]).toBe(`SELECT 0;\n\n${full}\n`)
-  // The phpstorm option names the app.
+  // The ide option names the app.
   expect(runs[0]).toEqual(launch(4, 13, '/Users/me/Apps/PhpStorm.app/Contents/MacOS/phpstorm'))
   await ui.unmount()
 })
 
-test('without PhpStorm the console button fails and leaves the console as it was', async ($, on) => {
+test('DataGrip without PhpStorm gets the console in its own config folder', async ($, on) => {
   const clock = mock.clock(on)
-  const { files, runs } = phpstorm(on)
+  const { files, runs } = phpstorm(on, { route: 'shop - dev' })
   delete files[BIN]
+  files[DATAGRIP_BIN] = ''
+  files['/repos/shop/.idea/dataSources.xml'] =
+    '<data-source source="LOCAL" name="shop - dev" group="shop" uuid="p1"><driver-ref>mariadb</driver-ref></data-source>'
+
+  const reply = '```sql\nSELECT 1;\n```'
+  await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(0)
+
+  const ui = await $.ui.mount({ ...message(reply), surface: 'terminal' })
+  const pressing = ui.press({ key: 'console-0-0' })
+  for (let i = 0; i < 10 && runs.length < 3; i++) await clock.advance(200)
+  await pressing
+  expect(files[DATAGRIP_CONSOLE]).toBe('SELECT 1;\n')
+  expect(runs[0]).toEqual([DATAGRIP_BIN, '--line', '1', '--column', '10', DATAGRIP_CONSOLE])
+  expect(runs[1]?.join(' ')).toContain('"com.jetbrains.datagrip')
+  await ui.unmount()
+})
+
+const DATAGRIP_APP = { options: { ide: '/Applications/DataGrip.app' } }
+
+test('the ide option picks DataGrip over an installed PhpStorm', DATAGRIP_APP, async ($, on) => {
+  const clock = mock.clock(on)
+  const { files, runs } = phpstorm(on, { route: 'shop - dev' })
+  files[DATAGRIP_BIN] = ''
+  files['/repos/shop/.idea/dataSources.xml'] =
+    '<data-source source="LOCAL" name="shop - dev" group="shop" uuid="p1"><driver-ref>mariadb</driver-ref></data-source>'
+
+  const reply = '```sql\nSELECT 1;\n```'
+  await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(0)
+
+  const ui = await $.ui.mount({ ...message(reply), surface: 'terminal' })
+  const pressing = ui.press({ key: 'console-0-0' })
+  for (let i = 0; i < 10 && runs.length < 3; i++) await clock.advance(200)
+  await pressing
+  expect(files[DATAGRIP_CONSOLE]).toBe('SELECT 1;\n')
+  expect(runs[0]?.[0]).toBe(DATAGRIP_BIN)
+  await ui.unmount()
+})
+
+test('without an installed IDE, SQL is not routed', async ($, on) => {
+  const clock = mock.clock(on)
+  const { files, prompts } = phpstorm(on)
+  delete files[BIN]
+
+  const reply = '```sql\nSELECT 1;\n```'
+  await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(0)
+
+  expect(prompts).toEqual([])
+  const ui = await $.ui.mount({ ...message(reply), surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['copy-0-0'])
+  await ui.unmount()
+})
+
+test('a failing launcher turns the console button into console failed', async ($, on) => {
+  const clock = mock.clock(on)
+  const { runs } = phpstorm(on, { exitCode: 1 })
 
   const reply = '```sql\nSELECT 1;\n```'
   await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -226,8 +289,7 @@ test('without PhpStorm the console button fails and leaves the console as it was
   const ui = await $.ui.mount({ ...message(reply), surface: 'terminal' })
   await ui.press({ key: 'console-0-0' })
   expect((await ui.find({ key: 'console-0-0' }))?.text).toBe('console failed')
-  expect(files[CONSOLE]).toBe('SELECT 0;\n')
-  expect(runs).toEqual([])
+  expect(runs).toEqual([launch(3, 10)])
   await ui.unmount()
 })
 
