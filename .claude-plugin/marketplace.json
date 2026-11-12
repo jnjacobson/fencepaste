@@ -5,7 +5,7 @@
     {
       "name": "fencepaste",
       "source": "./",
-      "description": "Copy buttons above the code blocks in Claude's replies, one per SQL statement, and a button that puts SQL into the matching PhpStorm database console"
+      "description": "Copy buttons above the code blocks in Claude's replies, one per SQL statement, and a button that puts SQL into the matching PhpStorm or DataGrip database console"
     }
   ]
 }

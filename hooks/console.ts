@@ -1,6 +1,6 @@
 import type { EngineInterface } from 'claude-code'
 
-import type { Target } from '../types'
+import type { Ide, Product, Target } from '../types'
 import { isFragment } from './parse'
 
 export type DataSource = {
@@ -11,12 +11,15 @@ export type DataSource = {
   isReadOnly: boolean
 }
 
-const APP_LAUNCHER = 'Contents/MacOS/phpstorm'
-/** Exits 0 once PhpStorm (an EAP too) is the frontmost app, 1 after 3s. */
-const FOCUS_WAIT = [
+export const DATAGRIP: Product = { name: 'DataGrip', binary: 'datagrip', bundleId: 'com.jetbrains.datagrip' }
+export const PHPSTORM: Product = { name: 'PhpStorm', binary: 'phpstorm', bundleId: 'com.jetbrains.PhpStorm' }
+const PRODUCTS_BY_PREFERENCE = [PHPSTORM, DATAGRIP]
+
+/** Exits 0 once the IDE (an EAP too) is the frontmost app, 1 after 3s. */
+const focusWait = (product: Product) => [
   '/bin/sh',
   '-c',
-  `for _ in $(seq 75); do lsappinfo info -only bundleid "$(lsappinfo front)" | grep -q '"com.jetbrains.PhpStorm' && exit 0; sleep 0.02; done; exit 1`,
+  `for _ in $(seq 75); do lsappinfo info -only bundleid "$(lsappinfo front)" | grep -q '"${product.bundleId}' && exit 0; sleep 0.02; done; exit 1`,
 ]
 const SETTLE_MS = 150
 
@@ -29,7 +32,7 @@ const attr = (attrs: string, name: string) => {
   return value === undefined ? undefined : decode(value)
 }
 
-/** The SQL data sources of a PhpStorm `options/dataSources.xml`; Redis left out. */
+/** The SQL data sources of a `dataSources.xml`; Redis left out. */
 export function parseDataSources(xml: string): DataSource[] {
   const sources: DataSource[] = []
   for (const [, attrs = '', body = ''] of xml.matchAll(/<data-source\s([^>]*)>([\s\S]*?)<\/data-source>/g)) {
@@ -68,22 +71,23 @@ export function appendStatement(
   }
 }
 
-/** The newest PhpStorm config folder (`PhpStorm2026.2`), not PhpStormLight. */
-export function newestConfig(names: readonly string[]): string | undefined {
+/** The product's newest config folder (`PhpStorm2026.2`), not PhpStormLight. */
+export function newestConfig(names: readonly string[], product: Product): string | undefined {
+  const pattern = new RegExp(`^${product.name}(\\d{4})\\.(\\d+)$`)
   const versions = names
-    .map(name => ({ name, m: /^PhpStorm(\d{4})\.(\d+)$/.exec(name) }))
+    .map(name => ({ name, m: pattern.exec(name) }))
     .filter(v => v.m !== null)
     .map(v => ({ name: v.name, year: Number(v.m?.[1]), minor: Number(v.m?.[2]) }))
     .sort((a, b) => b.year - a.year || b.minor - a.minor)
   return versions[0]?.name
 }
 
-export async function configDir($: EngineInterface): Promise<string | undefined> {
+export async function configDir($: EngineInterface, product: Product): Promise<string | undefined> {
   const home = await $.env.get('HOME')
   if (!home) return undefined
   const base = `${home}/Library/Application Support/JetBrains`
   const entries = await $.fs.list(base).catch(() => [])
-  const newest = newestConfig(entries.filter(e => e.kind === 'dir').map(e => e.name))
+  const newest = newestConfig(entries.filter(e => e.kind === 'dir').map(e => e.name), product)
   return newest === undefined ? undefined : `${base}/${newest}`
 }
 
@@ -108,47 +112,57 @@ export async function projectDataSources($: EngineInterface, cwd: string): Promi
 
 export const consolePath = (dir: string, uuid: string) => `${dir}/consoles/db/${uuid}/console.sql`
 
-/**
- * PhpStorm's launcher: the `phpstorm` option's (an app or the launcher
- * itself), else the one of PhpStorm.app in /Applications or ~/Applications.
- */
-export async function launcher($: EngineInterface, option: string): Promise<string | undefined> {
-  const set = option.trim().replace(/\/+$/, '')
-  if (set !== '') return set.endsWith('.app') ? `${set}/${APP_LAUNCHER}` : set
-  const home = await $.env.get('HOME')
-  const apps = ['/Applications', ...(home ? [`${home}/Applications`] : [])]
-  for (const dir of apps) {
-    const path = `${dir}/PhpStorm.app/${APP_LAUNCHER}`
-    if (await $.fs.exists(path)) return path
+const appLauncher = (app: string, product: Product) => `${app}/Contents/MacOS/${product.binary}`
+
+/** The installed product whose launcher is in `app`. */
+async function productIn($: EngineInterface, app: string): Promise<Ide | undefined> {
+  for (const product of PRODUCTS_BY_PREFERENCE) {
+    const bin = appLauncher(app, product)
+    if (await $.fs.exists(bin)) return { product, bin }
   }
   return undefined
 }
 
-/** Appends `sql` to the target's console and opens PhpStorm with the caret at `end`. */
-export async function openInConsole(
-  $: EngineInterface,
-  phpstorm: string,
-  target: Target,
-  sql: string,
-  end: number,
-): Promise<boolean> {
-  const bin = await launcher($, phpstorm)
-  if (bin === undefined) return false
+/**
+ * The `ide` option's IDE (an app, or a launcher named after its product),
+ * else PhpStorm.app or DataGrip.app from /Applications or ~/Applications.
+ */
+export async function findIde($: EngineInterface, option: string): Promise<Ide | undefined> {
+  const set = option.trim().replace(/\/+$/, '')
+  if (set.endsWith('.app')) return productIn($, set)
+  if (set !== '') {
+    const name = set.split('/').at(-1) ?? ''
+    return { product: PRODUCTS_BY_PREFERENCE.find(p => name.includes(p.binary)) ?? PHPSTORM, bin: set }
+  }
+  const home = await $.env.get('HOME')
+  const apps = ['/Applications', ...(home ? [`${home}/Applications`] : [])]
+  for (const product of PRODUCTS_BY_PREFERENCE) {
+    for (const dir of apps) {
+      const bin = appLauncher(`${dir}/${product.name}.app`, product)
+      if (await $.fs.exists(bin)) return { product, bin }
+    }
+  }
+  return undefined
+}
+
+/** Appends `sql` to the target's console and opens its IDE with the caret at `end`. */
+export async function openInConsole($: EngineInterface, target: Target, sql: string, end: number): Promise<boolean> {
+  const { ide } = target
   const existing = (await $.fs.exists(target.path)) ? await $.fs.read(target.path) : ''
   const { text, line, column } = appendStatement(existing, sql, end)
   await $.fs.write(target.path, text)
-  const argv = [bin, '--line', String(line), '--column', String(column), target.path]
+  const argv = [ide.bin, '--line', String(line), '--column', String(column), target.path]
   const first = await $.process.run(argv, { timeoutMs: 15_000 })
   if (first.exitCode !== 0) return false
-  // An open console reloads from disk a moment after PhpStorm's window turns
+  // An open console reloads from disk a moment after the IDE's window turns
   // active; the second jump then lands on the appended line.
-  await $.process.run(FOCUS_WAIT, { timeoutMs: 5_000 }).catch(() => undefined)
+  await $.process.run(focusWait(ide.product), { timeoutMs: 5_000 }).catch(() => undefined)
   await $.clock.sleep(SETTLE_MS)
   const second = await $.process.run(argv, { timeoutMs: 15_000 })
   return second.exitCode === 0
 }
 
-export const ROUTE_SYSTEM = `You route a SQL block from a Claude Code reply to the PhpStorm data source the user should run it in. The user runs these queries by hand, most often against production, where Claude has no access.
+export const ROUTE_SYSTEM = `You route a SQL block from a Claude Code reply to the data source the user should run it in. The user runs these queries by hand, most often against production, where Claude has no access.
 
 Rules:
 - Answer with exactly one data source name from the list, verbatim, or NONE. No other words.
