@@ -13,6 +13,7 @@ import {
   openInConsole,
   parseCompletion,
   pickSource,
+  projectDataSources,
   routePrompt,
 } from './console'
 import { SQL_LANGS, fence, isFragment, splitFences, splitSql, statementEnd } from './parse'
@@ -45,9 +46,10 @@ async function route($: EngineInterface, reply: string) {
   if (blocks.length === 0) return
 
   const dir = await configDir($)
-  const sources = dir === undefined ? [] : await dataSources($, dir)
-  if (dir === undefined || sources.length === 0) return
+  if (dir === undefined) return
   const cwd = await $.session.cwd()
+  const sources = [...(await projectDataSources($, cwd)), ...(await dataSources($, dir))]
+  if (sources.length === 0) return
 
   await Promise.all(
     blocks.map(async ({ lang, body }) => {

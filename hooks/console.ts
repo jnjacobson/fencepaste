@@ -92,6 +92,20 @@ export async function dataSources($: EngineInterface, dir: string): Promise<Data
   return parseDataSources(xml)
 }
 
+export function projectSourceFiles(cwd: string): string[] {
+  const parts = cwd.replace(/\/+$/, '').split('/')
+  return parts.map((_, i) => `${parts.slice(0, parts.length - i).join('/')}/.idea/dataSources.xml`)
+}
+
+export async function projectDataSources($: EngineInterface, cwd: string): Promise<DataSource[]> {
+  for (const path of projectSourceFiles(cwd)) {
+    if (await $.fs.exists(path)) {
+      return parseDataSources(await $.fs.read(path).catch(() => ''))
+    }
+  }
+  return []
+}
+
 export const consolePath = (dir: string, uuid: string) => `${dir}/consoles/db/${uuid}/console.sql`
 
 /**

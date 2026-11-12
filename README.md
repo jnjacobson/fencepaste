@@ -50,7 +50,7 @@ Change it in `/config`, or with `--config` on install.
 
 ## How the console button works
 
-- **Data sources** come from the newest PhpStorm config folder, `~/Library/Application Support/JetBrains/PhpStorm<version>/options/dataSources.xml`. Only global data sources are there; project-level ones are not read. Redis sources are left out.
+- **Data sources** come from the newest PhpStorm config folder, `~/Library/Application Support/JetBrains/PhpStorm<version>/options/dataSources.xml` (the global ones), and from the project's `.idea/dataSources.xml`, in the working directory or the nearest folder above it that has one. When a project and a global data source share a name, the project's wins. Redis sources are left out.
 - **Routing.** Haiku sees the data sources' names, groups and drivers, the reply and the working directory. A reply that names an environment (local, staging, prod, …) gets that one; otherwise production. Among several production sources it prefers a read-only replica or a non-root one. When it cannot tell the service, the block gets no console button. Its picks last for the session.
 - **Consoles** are PhpStorm's `consoles/db/<data source uuid>/console.sql` in the same config folder, made when missing. Each statement goes after one blank line.
 - **Jumping.** PhpStorm reloads an open console from disk only once its window is active, so fencepaste opens it, waits until PhpStorm is the frontmost app, and jumps to the new line a second time.
