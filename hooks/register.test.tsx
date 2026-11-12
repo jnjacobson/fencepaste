@@ -82,7 +82,7 @@ const launch = (line: number, column: number, bin = BIN) =>
   [bin, '--line', String(line), '--column', String(column), CONSOLE]
 
 /** Stands in for PhpStorm's config and launcher, Haiku and the clipboard. */
-function phpstorm(on: On, completion = 'NONE') {
+function phpstorm(on: On, { completion = 'NONE', route = SOURCE, cwd = '/repos/shop' } = {}) {
   const xml =
     `<data-source source="LOCAL" name="${SOURCE}" read-only="true" group="shop" uuid="u1">` +
     '<driver-ref>mariadb</driver-ref></data-source>'
@@ -97,7 +97,7 @@ function phpstorm(on: On, completion = 'NONE') {
 
   on('turn.complete', () => ({ text: '' }))
   on('env.get', () => ({ value: HOME }))
-  on('session.cwd', () => ({ value: '/repos/shop' }))
+  on('session.cwd', () => ({ value: cwd }))
   on('fs.list', () => ({
     value: [
       { name: 'PhpStorm2025.3', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
@@ -115,7 +115,7 @@ function phpstorm(on: On, completion = 'NONE') {
     return {
       value: {
         isAnswered: true,
-        text: e.system === COMPLETE_SYSTEM ? completion : SOURCE,
+        text: e.system === COMPLETE_SYSTEM ? completion : route,
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }
@@ -161,12 +161,38 @@ test('Haiku routes a reply’s SQL to a PhpStorm console; a press appends and op
   expect(prompts).toHaveLength(1)
 })
 
+test('a data source of the project’s .idea above the working directory gets its console in the config folder', async ($, on) => {
+  const clock = mock.clock(on)
+  const { files, prompts, runs } = phpstorm(on, { route: 'shop - dev', cwd: '/repos/shop/src' })
+  files['/repos/shop/.idea/dataSources.xml'] =
+    '<data-source source="LOCAL" name="shop - dev" group="shop" uuid="p1"><driver-ref>mariadb</driver-ref></data-source>'
+  const projectConsole = `${DIR}/consoles/db/p1/console.sql`
+
+  const reply = 'Run this on dev:\n\n```sql\nSELECT 1;\n```'
+  await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(0)
+
+  expect(prompts[0]?.prompt).toContain(
+    `Data sources:\n- shop - dev (group shop, mariadb)\n- ${SOURCE} (group shop, mariadb, read-only)\n`,
+  )
+
+  const ui = await $.ui.mount({ ...message(reply), surface: 'terminal' })
+  expect((await ui.find({ key: 'console-1-0' }))?.text).toBe('▸ shop - dev')
+
+  const pressing = ui.press({ key: 'console-1-0' })
+  for (let i = 0; i < 10 && runs.length < 3; i++) await clock.advance(200)
+  await pressing
+  expect(files[projectConsole]).toBe('SELECT 1;\n')
+  expect(runs[0]).toEqual([BIN, '--line', '1', '--column', '10', projectConsole])
+  await ui.unmount()
+})
+
 const OWN_APP = { options: { phpstorm: '/Users/me/Apps/PhpStorm.app/' } }
 
 test('a fragment goes to the console as the complete query Haiku builds; copy keeps the fragment', OWN_APP, async ($, on) => {
   const clock = mock.clock(on)
   const full = 'SELECT COUNT(*) FROM t\nWHERE b = 2;'
-  const { files, prompts, runs, copied } = phpstorm(on, `\`\`\`sql\n${full}\n\`\`\``)
+  const { files, prompts, runs, copied } = phpstorm(on, { completion: `\`\`\`sql\n${full}\n\`\`\`` })
 
   const reply = 'Count:\n\n```sql\nSELECT COUNT(*) FROM t\nWHERE a = 1;\n```\n\nFor last week:\n\n```sql\nWHERE b = 2\n```'
   await $.turn.complete({ answer: reply, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })

@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { appendStatement, blockKey, newestConfig, parseCompletion, parseDataSources, pickSource } from './console'
+import {
+  appendStatement,
+  blockKey,
+  newestConfig,
+  parseCompletion,
+  parseDataSources,
+  pickSource,
+  projectSourceFiles,
+} from './console'
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
@@ -56,6 +64,17 @@ describe('newestConfig', () => {
       newestConfig(['PhpStorm2025.3', 'PhpStorm2026.2', 'PhpStormLight2026.3', 'PhpStorm2026.10', 'IntelliJIdea2026.2']),
     ).toBe('PhpStorm2026.10')
     expect(newestConfig(['WebStorm2026.1'])).toBeUndefined()
+  })
+})
+
+describe('projectSourceFiles', () => {
+  test('looks in the working directory, then in each folder above it', () => {
+    expect(projectSourceFiles('/repos/shop/')).toEqual([
+      '/repos/shop/.idea/dataSources.xml',
+      '/repos/.idea/dataSources.xml',
+      '/.idea/dataSources.xml',
+    ])
+    expect(projectSourceFiles('/')).toEqual(['/.idea/dataSources.xml'])
   })
 })
 
